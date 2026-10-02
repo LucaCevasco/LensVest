@@ -1,6 +1,9 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -15,8 +18,20 @@ android {
         versionName = "1.0"
     }
 
+    buildTypes {
+        debug {
+            // Loco dev server on the host machine, as seen from the emulator.
+            buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:5150/\"")
+        }
+        release {
+            // ponytail: no deployed backend yet; set the real HTTPS URL when there is one.
+            buildConfigField("String", "BASE_URL", "\"https://api.lensvest.invalid/\"")
+        }
+    }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -29,5 +44,14 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.kotlinx.serialization)
+    implementation(libs.kotlinx.serialization.json)
     debugImplementation(libs.androidx.ui.tooling)
 }

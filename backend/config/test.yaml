@@ -86,3 +86,15 @@ auth:
     secret: h69FR3Ptk74nU7mouT5p
     # Token expiration time in seconds
     expiration: 604800 # 7 days
+
+cache:
+  kind: InMem
+
+settings:
+  berry:
+    mcp_url: https://connect.berry.app/mcp
+    authorize_url: https://hhlkktfdzwlndmdttpyg.supabase.co/auth/v1/oauth/authorize
+    token_url: https://hhlkktfdzwlndmdttpyg.supabase.co/auth/v1/oauth/token
+    client_id: 80c79459-45da-4287-bfda-01bce41ce240
+    redirect_uri: lensvest://berry/callback
+    scope: openid offline_access
