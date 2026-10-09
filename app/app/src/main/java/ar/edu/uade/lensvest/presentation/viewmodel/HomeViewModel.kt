@@ -47,7 +47,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun showStatus(status: BerryStatus) =
-        _uiState.update { it.copy(isBerryConnected = status.connected, tools = status.tools) }
+        _uiState.update { it.copy(isBerryConnected = status.connected) }
 
     private fun load(action: suspend () -> Unit) {
         viewModelScope.launch {
@@ -67,7 +67,6 @@ class HomeViewModel @Inject constructor(
 
 data class HomeUiState(
     val isBerryConnected: Boolean = false,
-    val tools: List<String> = emptyList(),
     /** One-shot: the screen opens it in the browser and calls [HomeViewModel.onAuthorizeUrlOpened]. */
     val authorizeUrl: String? = null,
     val isLoading: Boolean = false,

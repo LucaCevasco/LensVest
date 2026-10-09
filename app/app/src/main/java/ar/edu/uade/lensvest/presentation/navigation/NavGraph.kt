@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import ar.edu.uade.lensvest.presentation.ui.assistant.AssistantScreen
 import ar.edu.uade.lensvest.presentation.ui.auth.AuthScreen
 import ar.edu.uade.lensvest.presentation.ui.home.BerryCallback
 import ar.edu.uade.lensvest.presentation.ui.home.HomeScreen
@@ -15,6 +16,9 @@ object AuthRoute
 
 @Serializable
 object HomeRoute
+
+@Serializable
+object AssistantRoute
 
 @Composable
 fun AppNavigation(
@@ -39,7 +43,11 @@ fun AppNavigation(
             HomeScreen(
                 berryCallback = berryCallback,
                 onBerryCallbackHandled = onBerryCallbackHandled,
+                onOpenAssistant = { navController.navigate(AssistantRoute) },
             )
+        }
+        composable<AssistantRoute> {
+            AssistantScreen()
         }
     }
 }

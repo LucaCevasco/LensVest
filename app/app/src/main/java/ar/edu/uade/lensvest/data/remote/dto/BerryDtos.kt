@@ -10,4 +10,4 @@ data class BerryConnectResponse(@SerialName("authorize_url") val authorizeUrl: S
 data class BerryCallbackRequest(val code: String, val state: String)
 
 @Serializable
-data class BerryStatusResponse(val connected: Boolean, val tools: List<String>)
+data class BerryStatusResponse(val connected: Boolean)

@@ -3,8 +3,10 @@ package ar.edu.uade.lensvest.presentation.di
 import ar.edu.uade.lensvest.BuildConfig
 import ar.edu.uade.lensvest.data.local.SessionStore
 import ar.edu.uade.lensvest.data.remote.api.LensVestApi
+import ar.edu.uade.lensvest.data.repository.AssistantRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.AuthRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.BerryRepositoryImpl
+import ar.edu.uade.lensvest.domain.repository.AssistantRepository
 import ar.edu.uade.lensvest.domain.repository.AuthRepository
 import ar.edu.uade.lensvest.domain.repository.BerryRepository
 import dagger.Module
@@ -16,6 +18,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 @Module
@@ -27,6 +30,9 @@ object AppModule {
     @Singleton
     fun provideOkHttpClient(session: SessionStore): OkHttpClient =
         OkHttpClient.Builder()
+            // The assistant can take a while: it may call several Berry tools in one turn.
+            .readTimeout(150, TimeUnit.SECONDS)
+            .callTimeout(160, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val token = session.token.value
                 val request = if (token == null) {
@@ -57,4 +63,8 @@ object AppModule {
     @Provides
     @Singleton
     fun provideBerryRepository(impl: BerryRepositoryImpl): BerryRepository = impl
+
+    @Provides
+    @Singleton
+    fun provideAssistantRepository(impl: AssistantRepositoryImpl): AssistantRepository = impl
 }

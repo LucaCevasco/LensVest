@@ -28,6 +28,7 @@ import ar.edu.uade.lensvest.ui.theme.LensVestTheme
 fun HomeScreen(
     berryCallback: BerryCallback?,
     onBerryCallbackHandled: () -> Unit,
+    onOpenAssistant: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -50,6 +51,7 @@ fun HomeScreen(
     HomeContent(
         uiState = uiState,
         onConnectBerry = viewModel::connectBerry,
+        onOpenAssistant = onOpenAssistant,
         onRetry = viewModel::refreshStatus,
     )
 }
@@ -58,6 +60,7 @@ fun HomeScreen(
 private fun HomeContent(
     uiState: HomeUiState,
     onConnectBerry: () -> Unit,
+    onOpenAssistant: () -> Unit,
     onRetry: () -> Unit,
 ) {
     Column(
@@ -66,7 +69,7 @@ private fun HomeContent(
     ) {
         if (uiState.isBerryConnected) {
             Text("Berry conectado", style = MaterialTheme.typography.titleLarge)
-            uiState.tools.forEach { Text("• $it") }
+            Button(onClick = onOpenAssistant) { Text("Abrir asistente") }
         } else {
             Button(onClick = onConnectBerry, enabled = !uiState.isLoading) {
                 Text("Conectar con Berry")
@@ -86,8 +89,9 @@ private fun HomeContent(
 private fun HomeContentConnectedPreview() {
     LensVestTheme {
         HomeContent(
-            uiState = HomeUiState(isBerryConnected = true, tools = listOf("get_portfolio", "place_order")),
+            uiState = HomeUiState(isBerryConnected = true),
             onConnectBerry = {},
+            onOpenAssistant = {},
             onRetry = {},
         )
     }

@@ -1,5 +1,8 @@
 package ar.edu.uade.lensvest.data.remote.api
 
+import ar.edu.uade.lensvest.data.remote.dto.AssistantConfirmRequest
+import ar.edu.uade.lensvest.data.remote.dto.AssistantMessageRequest
+import ar.edu.uade.lensvest.data.remote.dto.AssistantTurnResponse
 import ar.edu.uade.lensvest.data.remote.dto.BerryCallbackRequest
 import ar.edu.uade.lensvest.data.remote.dto.BerryConnectResponse
 import ar.edu.uade.lensvest.data.remote.dto.BerryStatusResponse
@@ -26,4 +29,10 @@ interface LensVestApi {
 
     @GET("api/berry/status")
     suspend fun berryStatus(): BerryStatusResponse
+
+    @POST("api/assistant/messages")
+    suspend fun assistantMessage(@Body body: AssistantMessageRequest): AssistantTurnResponse
+
+    @POST("api/assistant/confirm")
+    suspend fun assistantConfirm(@Body body: AssistantConfirmRequest): AssistantTurnResponse
 }
