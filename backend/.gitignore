@@ -17,3 +17,5 @@ target/
 
 *.sqlite
 *.sqlite-*
+# Local secrets (ANTHROPIC_API_KEY, ...)
+.env

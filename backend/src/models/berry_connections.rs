@@ -1,14 +1,13 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use chrono::{Duration, Utc};
+use chrono::{Duration, SecondsFormat, Utc};
 use loco_rs::prelude::*;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 pub use super::_entities::berry_connections::{self, ActiveModel, Entity, Model};
+use crate::data::managed_agents::ManagedAgents;
 pub type BerryConnections = Entity;
-
-const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for ActiveModel {
@@ -84,24 +83,22 @@ impl BerrySettings {
         Ok(url.into())
     }
 
+    /// Exchanges the authorization code for tokens. This is the only call the
+    /// backend makes to Berry's token endpoint: refreshing belongs to the vault.
+    ///
     /// # Errors
     /// When Berry rejects the code or is unreachable.
     pub async fn exchange_code(&self, code: &str, verifier: &str) -> Result<TokenResponse> {
-        self.token_request(&[
-            ("grant_type", "authorization_code"),
-            ("code", code),
-            ("redirect_uri", &self.redirect_uri),
-            ("client_id", &self.client_id),
-            ("code_verifier", verifier),
-            ("resource", &self.mcp_url),
-        ])
-        .await
-    }
-
-    async fn token_request(&self, form: &[(&str, &str)]) -> Result<TokenResponse> {
         let res = reqwest::Client::new()
             .post(&self.token_url)
-            .form(form)
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("code", code),
+                ("redirect_uri", &self.redirect_uri),
+                ("client_id", &self.client_id),
+                ("code_verifier", verifier),
+                ("resource", &self.mcp_url),
+            ])
             .send()
             .await
             .map_err(Error::wrap)?;
@@ -112,86 +109,27 @@ impl BerrySettings {
         res.json().await.map_err(Error::wrap)
     }
 
-    /// Names of the tools the Berry MCP server exposes to this token.
-    ///
-    /// # Errors
-    /// When the token is rejected or the server is unreachable.
-    pub async fn list_tools(&self, token: &str) -> Result<Vec<String>> {
-        let client = reqwest::Client::new();
-        let init = json!({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": { "name": "lensvest", "version": env!("CARGO_PKG_VERSION") }
-            }
+    /// Vault credential that lets the agent call Berry's MCP server as this user.
+    /// With a refresh token, Anthropic refreshes it on its own from then on.
+    #[must_use]
+    pub fn mcp_oauth_credential(&self, tokens: &TokenResponse) -> Value {
+        let expires_at = (Utc::now() + Duration::seconds(tokens.expires_in))
+            .to_rfc3339_opts(SecondsFormat::Secs, true);
+        let mut auth = json!({
+            "type": "mcp_oauth",
+            "mcp_server_url": self.mcp_url,
+            "access_token": tokens.access_token,
+            "expires_at": expires_at,
         });
-        let (_, session) = self.mcp_post(&client, token, None, init).await?;
-        let session = session.as_deref();
-        let initialized = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
-        self.mcp_post(&client, token, session, initialized).await?;
-        let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
-        let (res, _) = self.mcp_post(&client, token, session, list).await?;
-
-        Ok(res["result"]["tools"]
-            .as_array()
-            .map(|tools| {
-                tools
-                    .iter()
-                    .filter_map(|t| t["name"].as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default())
-    }
-
-    // ponytail: hand-rolled MCP streamable-HTTP client (one request → one response).
-    // Switch to the `rmcp` crate once we call tools or need server notifications.
-    async fn mcp_post(
-        &self,
-        client: &reqwest::Client,
-        token: &str,
-        session: Option<&str>,
-        body: Value,
-    ) -> Result<(Value, Option<String>)> {
-        let mut req = client
-            .post(&self.mcp_url)
-            .bearer_auth(token)
-            .header("accept", "application/json, text/event-stream")
-            .header("mcp-protocol-version", MCP_PROTOCOL_VERSION)
-            .json(&body);
-        if let Some(session) = session {
-            req = req.header("mcp-session-id", session);
+        if let Some(refresh_token) = &tokens.refresh_token {
+            auth["refresh"] = json!({
+                "refresh_token": refresh_token,
+                "client_id": self.client_id,
+                "token_endpoint": self.token_url,
+                "token_endpoint_auth": { "type": "none" },
+            });
         }
-        let res = req.send().await.map_err(Error::wrap)?;
-        if res.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(Error::Unauthorized("berry rejected the access token".to_string()));
-        }
-        if !res.status().is_success() {
-            let body = res.text().await.unwrap_or_default();
-            return Err(Error::string(&format!("berry mcp: {body}")));
-        }
-        let session = res
-            .headers()
-            .get("mcp-session-id")
-            .and_then(|v| v.to_str().ok())
-            .map(String::from);
-        let text = res.text().await.map_err(Error::wrap)?;
-        // An SSE response carries the JSON-RPC message on its `data:` line.
-        let payload = text
-            .lines()
-            .filter_map(|l| l.strip_prefix("data:"))
-            .last()
-            .unwrap_or(&text)
-            .trim();
-        let value: Value = if payload.is_empty() {
-            Value::Null
-        } else {
-            serde_json::from_str(payload)?
-        };
-        if let Some(err) = value.get("error") {
-            return Err(Error::string(&format!("berry mcp: {err}")));
-        }
-        Ok((value, session))
+        json!({ "display_name": "Berry", "auth": auth })
     }
 }
 
@@ -205,59 +143,103 @@ impl Model {
             .await?)
     }
 
-    /// Stores fresh tokens for the user, creating the connection on first use.
+    /// Hands freshly issued Berry tokens to the user's own vault (created on
+    /// first connect). Tokens are never stored in our database.
     ///
     /// # Errors
-    /// When the query fails.
-    // ponytail: tokens stored in plain text; encrypt with a config key before production.
-    pub async fn upsert(db: &DatabaseConnection, user_id: i64, tok: TokenResponse) -> Result<Self> {
-        let existing = Self::find_by_user(db, user_id).await?;
-        let is_new = existing.is_none();
-        let mut conn = existing.map_or_else(
-            || ActiveModel {
-                user_id: Set(user_id),
-                ..Default::default()
-            },
-            IntoActiveModel::into_active_model,
-        );
-        conn.access_token = Set(tok.access_token);
-        // Keep the previous refresh token when the server does not rotate it.
-        if tok.refresh_token.is_some() {
-            conn.refresh_token = Set(tok.refresh_token);
-        }
-        conn.expires_at = Set((Utc::now() + Duration::seconds(tok.expires_in)).into());
-        Ok(if is_new {
-            conn.insert(db).await?
-        } else {
-            conn.update(db).await?
+    /// When the Anthropic API or the database fails.
+    pub async fn connect(
+        db: &DatabaseConnection,
+        api: &ManagedAgents,
+        berry: &BerrySettings,
+        user: &super::users::Model,
+        tokens: &TokenResponse,
+    ) -> Result<Self> {
+        let existing = Self::find_by_user(db, user.id).await?;
+        let vault_id = match &existing {
+            Some(conn) => {
+                // Credentials are keyed by MCP URL: free the key for the new tokens.
+                // ponytail: ignore the error, the credential may already be archived.
+                let _ = api
+                    .post(
+                        &format!(
+                            "/vaults/{}/credentials/{}/archive",
+                            conn.vault_id, conn.credential_id
+                        ),
+                        &json!({}),
+                    )
+                    .await;
+                conn.vault_id.clone()
+            }
+            None => {
+                let vault = api
+                    .post(
+                        "/vaults",
+                        &json!({ "display_name": format!("LensVest user {}", user.pid) }),
+                    )
+                    .await?;
+                ManagedAgents::id(&vault)?
+            }
+        };
+        let credential = api
+            .post(
+                &format!("/vaults/{vault_id}/credentials"),
+                &berry.mcp_oauth_credential(tokens),
+            )
+            .await?;
+        let credential_id = ManagedAgents::id(&credential)?;
+
+        Ok(match existing {
+            Some(conn) => {
+                let mut conn = conn.into_active_model();
+                conn.credential_id = Set(credential_id);
+                conn.update(db).await?
+            }
+            None => {
+                ActiveModel {
+                    user_id: Set(user.id),
+                    vault_id: Set(vault_id),
+                    credential_id: Set(credential_id),
+                    ..Default::default()
+                }
+                .insert(db)
+                .await?
+            }
         })
     }
 
-    /// A non-expired access token, refreshing it when it is about to expire.
+    /// The user's assistant session, created on first use or after it ended.
     ///
     /// # Errors
-    /// When the session cannot be refreshed and the user must reconnect.
-    pub async fn access_token(self, db: &DatabaseConnection, settings: &BerrySettings) -> Result<String> {
-        if self.expires_at > Utc::now() + Duration::seconds(60) {
-            return Ok(self.access_token);
+    /// When the Anthropic API or the database fails.
+    pub async fn session(self, db: &DatabaseConnection, api: &ManagedAgents) -> Result<String> {
+        if let Some(session_id) = &self.session_id {
+            if api.session_is_usable(session_id).await? {
+                return Ok(session_id.clone());
+            }
         }
-        let Some(refresh_token) = self.refresh_token.as_deref() else {
-            return Err(Error::Unauthorized("berry session expired, reconnect".to_string()));
-        };
-        let tok = settings
-            .token_request(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token),
-                ("client_id", &settings.client_id),
-            ])
-            .await?;
-        Ok(Self::upsert(db, self.user_id, tok).await?.access_token)
+        let session_id = api.create_session(&self.vault_id).await?;
+        let mut conn = self.into_active_model();
+        conn.session_id = Set(Some(session_id.clone()));
+        conn.update(db).await?;
+        Ok(session_id)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn settings() -> BerrySettings {
+        BerrySettings {
+            mcp_url: "https://connect.berry.app/mcp".into(),
+            authorize_url: "https://auth.example/oauth/authorize".into(),
+            token_url: "https://auth.example/oauth/token".into(),
+            client_id: "cid".into(),
+            redirect_uri: "lensvest://berry/callback".into(),
+            scope: "openid offline_access".into(),
+        }
+    }
 
     #[test]
     fn pkce_challenge_matches_reference() {
@@ -270,15 +252,7 @@ mod tests {
 
     #[test]
     fn authorize_url_carries_pkce_and_state() {
-        let s = BerrySettings {
-            mcp_url: "https://connect.berry.app/mcp".into(),
-            authorize_url: "https://auth.example/oauth/authorize".into(),
-            token_url: "https://auth.example/oauth/token".into(),
-            client_id: "cid".into(),
-            redirect_uri: "lensvest://berry/callback".into(),
-            scope: "openid offline_access".into(),
-        };
-        let url = s.authorize_url("st", "ch").unwrap();
+        let url = settings().authorize_url("st", "ch").unwrap();
         for part in [
             "client_id=cid",
             "state=st",
@@ -288,5 +262,32 @@ mod tests {
         ] {
             assert!(url.contains(part), "{url} missing {part}");
         }
+    }
+
+    #[test]
+    fn credential_lets_the_vault_refresh_only_with_a_refresh_token() {
+        let mut tokens = TokenResponse {
+            access_token: "at".into(),
+            refresh_token: Some("rt".into()),
+            expires_in: 3600,
+        };
+        let cred = settings().mcp_oauth_credential(&tokens);
+        assert_eq!(
+            cred["auth"]["mcp_server_url"],
+            "https://connect.berry.app/mcp"
+        );
+        assert_eq!(
+            cred["auth"]["refresh"]["token_endpoint"],
+            "https://auth.example/oauth/token"
+        );
+        assert_eq!(
+            cred["auth"]["refresh"]["token_endpoint_auth"]["type"],
+            "none"
+        );
+
+        tokens.refresh_token = None;
+        assert!(settings().mcp_oauth_credential(&tokens)["auth"]
+            .get("refresh")
+            .is_none());
     }
 }

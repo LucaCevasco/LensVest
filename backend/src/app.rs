@@ -14,7 +14,12 @@ use migration::Migrator;
 use std::path::Path;
 
 #[allow(unused_imports)]
-use crate::{controllers, models::_entities::{berry_connections, users}, tasks, workers::downloader::DownloadWorker};
+use crate::{
+    controllers,
+    models::_entities::{berry_connections, users},
+    tasks,
+    workers::downloader::DownloadWorker,
+};
 
 pub struct App;
 #[async_trait]
@@ -47,6 +52,7 @@ impl Hooks for App {
 
     fn routes(_ctx: &AppContext) -> AppRoutes {
         AppRoutes::with_default_routes() // controller routes below
+            .add_route(controllers::assistant::routes())
             .add_route(controllers::auth::routes())
             .add_route(controllers::berry::routes())
     }
@@ -57,6 +63,7 @@ impl Hooks for App {
 
     #[allow(unused_variables)]
     fn register_tasks(tasks: &mut Tasks) {
+        tasks.register(tasks::ai_setup::AiSetup);
         // tasks-inject (do not remove)
         tasks.register(tasks::user_create::UserCreate);
         tasks.register(tasks::user_delete::UserDelete);

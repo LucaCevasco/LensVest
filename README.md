@@ -12,8 +12,19 @@ cargo test
 - Berry MCP: config en `config/development.yaml` → `settings.berry`. El `client_id` es un cliente OAuth público
   registrado por Dynamic Client Registration con redirect `lensvest://berry/callback`.
 
+### Asistente (Claude Managed Agents)
+
+- Copiar `backend/.env.example` a `backend/.env` y poner `ANTHROPIC_API_KEY` (key de un workspace de la API, no la de Claude Code).
+- Una sola vez: `cargo loco task ai_setup` crea el environment y el agente; los IDs van en `settings.anthropic`
+  (`config/development.yaml`). Volver a correrlo publica una nueva versión del agente (p. ej. al cambiar el prompt).
+- Cada usuario tiene **su propio vault** con la credencial OAuth de Berry; el backend no guarda tokens de Berry
+  y Anthropic los renueva. Cada sesión del agente usa solo el vault de su usuario.
+- `place_order` y `cancel_order` requieren confirmación (`always_ask`): la app muestra la orden y el usuario
+  confirma o rechaza. Cada sesión tiene un tope de gasto (`session_budget_cents`).
+
 Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, y con `Authorization: Bearer <jwt>`:
-`POST /api/berry/connect`, `POST /api/berry/callback`, `GET /api/berry/status`.
+`POST /api/berry/connect`, `POST /api/berry/callback`, `GET /api/berry/status`,
+`POST /api/assistant/messages` (`{text}`), `POST /api/assistant/confirm` (`{approve}`).
 
 ## App (`app/`) — Kotlin + Jetpack Compose (MVVM / Clean Architecture, Hilt)
 

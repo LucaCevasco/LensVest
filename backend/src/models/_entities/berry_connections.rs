@@ -10,11 +10,9 @@ pub struct Model {
     pub updated_at: DateTimeWithTimeZone,
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "Text")]
-    pub access_token: String,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub refresh_token: Option<String>,
-    pub expires_at: DateTimeWithTimeZone,
+    pub vault_id: String,
+    pub credential_id: String,
+    pub session_id: Option<String>,
     pub user_id: i64,
 }
 

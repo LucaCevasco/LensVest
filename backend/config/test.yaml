@@ -98,3 +98,10 @@ settings:
     client_id: 80c79459-45da-4287-bfda-01bce41ce240
     redirect_uri: lensvest://berry/callback
     scope: openid offline_access
+  anthropic:
+    api_key: test-key
+    # Filled in after running `cargo loco task ai_setup` once.
+    agent_id: ""
+    environment_id: ""
+    # Hard spend cap per assistant session, in USD cents.
+    session_budget_cents: 200

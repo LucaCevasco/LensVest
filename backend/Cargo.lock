@@ -562,6 +562,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "dotenvy",
  "include_dir",
  "insta",
  "loco-rs",

@@ -1,8 +1,11 @@
 use std::time::Duration;
 
-use crate::models::{
-    berry_connections::{self, pkce_challenge, BerrySettings},
-    users,
+use crate::{
+    data::managed_agents::ManagedAgents,
+    models::{
+        berry_connections::{self, pkce_challenge, BerrySettings},
+        users,
+    },
 };
 use loco_rs::{hash, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -24,7 +27,6 @@ pub struct CallbackParams {
 #[derive(Debug, Serialize)]
 struct StatusResponse {
     connected: bool,
-    tools: Vec<String>,
 }
 
 fn pending_key(state: &str) -> String {
@@ -71,32 +73,22 @@ async fn callback(
     }
 
     let user = users::Model::find_by_pid(&ctx.db, &auth.claims.pid).await?;
-    let settings = BerrySettings::from_context(&ctx)?;
-    let tokens = settings.exchange_code(&params.code, &pending.verifier).await?;
-    let conn = berry_connections::Model::upsert(&ctx.db, user.id, tokens).await?;
-    let tools = settings.list_tools(&conn.access_token).await?;
-    format::json(StatusResponse {
-        connected: true,
-        tools,
-    })
+    let berry = BerrySettings::from_context(&ctx)?;
+    let tokens = berry.exchange_code(&params.code, &pending.verifier).await?;
+    let api = ManagedAgents::from_context(&ctx)?;
+    berry_connections::Model::connect(&ctx.db, &api, &berry, &user, &tokens).await?;
+    format::json(StatusResponse { connected: true })
 }
 
 #[debug_handler]
 async fn status(auth: auth::JWT, State(ctx): State<AppContext>) -> Result<Response> {
     let user = users::Model::find_by_pid(&ctx.db, &auth.claims.pid).await?;
-    let Some(conn) = berry_connections::Model::find_by_user(&ctx.db, user.id).await? else {
-        return format::json(StatusResponse {
-            connected: false,
-            tools: vec![],
-        });
-    };
-    let settings = BerrySettings::from_context(&ctx)?;
-    let token = conn.access_token(&ctx.db, &settings).await?;
-    let tools = settings.list_tools(&token).await?;
-    format::json(StatusResponse {
-        connected: true,
-        tools,
-    })
+    // ponytail: "connected" = the user has a vault credential; Berry's own
+    // validity is checked when the assistant uses it.
+    let connected = berry_connections::Model::find_by_user(&ctx.db, user.id)
+        .await?
+        .is_some();
+    format::json(StatusResponse { connected })
 }
 
 pub fn routes() -> Routes {
