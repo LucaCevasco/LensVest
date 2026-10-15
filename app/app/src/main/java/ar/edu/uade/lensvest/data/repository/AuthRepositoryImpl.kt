@@ -13,7 +13,8 @@ class AuthRepositoryImpl @Inject constructor(
 ) : AuthRepository {
 
     override suspend fun login(email: String, password: String) {
-        session.save(api.login(LoginRequest(email, password)).token)
+        val response = api.login(LoginRequest(email, password))
+        session.save(response.token, response.name)
     }
 
     override suspend fun register(name: String, email: String, password: String) =

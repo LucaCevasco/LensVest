@@ -39,6 +39,10 @@ ar.edu.uade.lensvest/
 └── ui/theme/
 ```
 
+- Diseño: Figma "InvestLens — Diseño App" (copia `rVM36fl0jcbqQSXpO6jFIx`). Tokens en `ui/theme`
+  (crema `#F5EFE3`, azul marino `#14213D`, verde bosque `#2D5A3D`); tipografías Fraunces y DM Sans
+  (variables, en `res/font/`, licencia OFL en `app/fonts-licenses/`). Íconos del diseño como vectores en `res/drawable/`.
+- Lens Mode usa la cámara real (CameraX); pide el permiso `CAMERA` al abrirse.
 - El build debug apunta a `http://10.0.2.2:5150/` (`BuildConfig.BASE_URL`).
 - **Android 17 (API 37)**: `10.0.2.2` cuenta como red local. El build debug pide el permiso
   "dispositivos cercanos" (`ACCESS_LOCAL_NETWORK`) al abrir la app: aceptarlo, si no, no llega al backend.

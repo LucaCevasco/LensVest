@@ -9,15 +9,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ar.edu.uade.lensvest.presentation.navigation.AppNavigation
-import ar.edu.uade.lensvest.presentation.ui.home.BerryCallback
+import ar.edu.uade.lensvest.presentation.ui.broker.BerryCallback
 import ar.edu.uade.lensvest.ui.theme.LensVestTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,14 +34,11 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LensVestTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    val callback by berryCallback.collectAsStateWithLifecycle()
-                    AppNavigation(
-                        berryCallback = callback,
-                        onBerryCallbackHandled = { berryCallback.value = null },
-                        modifier = Modifier.safeDrawingPadding(),
-                    )
-                }
+                val callback by berryCallback.collectAsStateWithLifecycle()
+                AppNavigation(
+                    berryCallback = callback,
+                    onBerryCallbackHandled = { berryCallback.value = null },
+                )
             }
         }
     }

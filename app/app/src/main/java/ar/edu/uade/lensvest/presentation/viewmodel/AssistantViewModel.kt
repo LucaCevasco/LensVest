@@ -6,6 +6,7 @@ import ar.edu.uade.lensvest.domain.model.AssistantTurn
 import ar.edu.uade.lensvest.domain.model.ChatMessage
 import ar.edu.uade.lensvest.domain.model.ChatRole
 import ar.edu.uade.lensvest.domain.model.PendingAction
+import ar.edu.uade.lensvest.domain.usecase.GetUserNameUseCase
 import ar.edu.uade.lensvest.domain.usecase.ResolvePendingActionsUseCase
 import ar.edu.uade.lensvest.domain.usecase.SendAssistantMessageUseCase
 import ar.edu.uade.lensvest.mapper.toUserMessage
@@ -21,9 +22,15 @@ import javax.inject.Inject
 class AssistantViewModel @Inject constructor(
     private val sendAssistantMessageUseCase: SendAssistantMessageUseCase,
     private val resolvePendingActionsUseCase: ResolvePendingActionsUseCase,
+    getUserNameUseCase: GetUserNameUseCase,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(AssistantUiState())
+    private val _uiState = MutableStateFlow(
+        AssistantUiState(
+            // Local greeting, not a server turn: the conversation starts with the user's first message.
+            messages = listOf(ChatMessage(ChatRole.ASSISTANT, greeting(getUserNameUseCase()))),
+        ),
+    )
     val uiState = _uiState.asStateFlow()
 
     fun send(text: String) {
@@ -37,6 +44,7 @@ class AssistantViewModel @Inject constructor(
 
     fun confirmPendingActions() = respond { resolvePendingActionsUseCase(approve = true) }
 
+    /** "Editar": rejects the operation so the user can ask for it again with other values. */
     fun rejectPendingActions() = respond { resolvePendingActionsUseCase(approve = false) }
 
     private fun respond(call: suspend () -> AssistantTurn) {
@@ -45,7 +53,11 @@ class AssistantViewModel @Inject constructor(
             try {
                 val turn = call()
                 _uiState.update { state ->
-                    val reply = turn.reply.takeIf { it.isNotBlank() }?.let { ChatMessage(ChatRole.ASSISTANT, it) }
+                    val text = turn.reply.ifBlank {
+                        // Never leave a turn without visible feedback.
+                        if (turn.pendingActions.isEmpty()) "No pude responder esta vez. Probá de nuevo." else ""
+                    }
+                    val reply = text.takeIf { it.isNotBlank() }?.let { ChatMessage(ChatRole.ASSISTANT, it) }
                     state.copy(
                         messages = state.messages + listOfNotNull(reply),
                         pendingActions = turn.pendingActions,
@@ -60,6 +72,9 @@ class AssistantViewModel @Inject constructor(
         }
     }
 }
+
+private fun greeting(name: String?) =
+    "¡Hola${name?.let { " $it" }.orEmpty()}! Contame qué querés hacer, como si le hablaras a un amigo."
 
 data class AssistantUiState(
     // ponytail: history lives only in memory; the server session keeps the full transcript.

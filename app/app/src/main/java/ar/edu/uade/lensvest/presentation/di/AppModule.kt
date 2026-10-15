@@ -6,9 +6,11 @@ import ar.edu.uade.lensvest.data.remote.api.LensVestApi
 import ar.edu.uade.lensvest.data.repository.AssistantRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.AuthRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.BerryRepositoryImpl
+import ar.edu.uade.lensvest.data.repository.ProfileRepositoryImpl
 import ar.edu.uade.lensvest.domain.repository.AssistantRepository
 import ar.edu.uade.lensvest.domain.repository.AuthRepository
 import ar.edu.uade.lensvest.domain.repository.BerryRepository
+import ar.edu.uade.lensvest.domain.repository.ProfileRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -67,4 +69,8 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAssistantRepository(impl: AssistantRepositoryImpl): AssistantRepository = impl
+
+    @Provides
+    @Singleton
+    fun provideProfileRepository(impl: ProfileRepositoryImpl): ProfileRepository = impl
 }

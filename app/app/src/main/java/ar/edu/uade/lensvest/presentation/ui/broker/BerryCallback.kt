@@ -1,4 +1,4 @@
-package ar.edu.uade.lensvest.presentation.ui.home
+package ar.edu.uade.lensvest.presentation.ui.broker
 
 import android.net.Uri
 
