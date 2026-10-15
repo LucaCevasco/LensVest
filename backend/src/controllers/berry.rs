@@ -83,11 +83,15 @@ async fn callback(
 #[debug_handler]
 async fn status(auth: auth::JWT, State(ctx): State<AppContext>) -> Result<Response> {
     let user = users::Model::find_by_pid(&ctx.db, &auth.claims.pid).await?;
-    // ponytail: "connected" = the user has a vault credential; Berry's own
-    // validity is checked when the assistant uses it.
-    let connected = berry_connections::Model::find_by_user(&ctx.db, user.id)
-        .await?
-        .is_some();
+    let connected = match berry_connections::Model::find_by_user(&ctx.db, user.id).await? {
+        // An expired or revoked credential counts as disconnected, so the app offers to reconnect.
+        Some(conn) => {
+            ManagedAgents::from_context(&ctx)?
+                .credential_is_valid(&conn.vault_id, &conn.credential_id)
+                .await?
+        }
+        None => false,
+    };
     format::json(StatusResponse { connected })
 }
 

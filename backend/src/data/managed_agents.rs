@@ -40,6 +40,9 @@ pub struct PendingAction {
 pub struct Turn {
     pub reply: String,
     pub pending_actions: Vec<PendingAction>,
+    /// Berry rejected the user's credential during the turn (expired or revoked).
+    #[serde(skip)]
+    pub berry_auth_failed: bool,
 }
 
 pub struct ManagedAgents {
@@ -134,6 +137,21 @@ impl ManagedAgents {
         Self::id(&session)
     }
 
+    /// Whether the vault credential still works against the MCP server
+    /// (Anthropic probes the server and refreshes the token if it can).
+    ///
+    /// # Errors
+    /// When the API rejects the request or is unreachable.
+    pub async fn credential_is_valid(&self, vault_id: &str, credential_id: &str) -> Result<bool> {
+        let result = self
+            .post(
+                &format!("/vaults/{vault_id}/credentials/{credential_id}/mcp_oauth_validate"),
+                &json!({}),
+            )
+            .await?;
+        Ok(result["status"] == "valid")
+    }
+
     /// Whether a session can still take events.
     ///
     /// # Errors
@@ -225,7 +243,12 @@ fn apply_event(event: &Value, turn: &mut Turn, asks: &mut Vec<PendingAction>) ->
                 input: event["input"].clone(),
             });
         }
-        "session.error" => tracing::warn!(%event, "managed agents session error"),
+        "session.error" => {
+            tracing::warn!(%event, "managed agents session error");
+            if event["error"]["type"] == "mcp_authentication_failed_error" {
+                turn.berry_auth_failed = true;
+            }
+        }
         "session.status_terminated" => {
             return Err(Error::string("la sesión del asistente terminó"));
         }
@@ -306,5 +329,14 @@ mod tests {
         let idle =
             json!({"type": "session.status_idle", "stop_reason": {"type": "budget_reached"}});
         assert!(apply_event(&idle, &mut Turn::default(), &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn berry_auth_failure_is_flagged() {
+        let error = json!({"type": "session.error",
+                           "error": {"type": "mcp_authentication_failed_error", "mcp_server_name": "berry"}});
+        let mut turn = Turn::default();
+        assert!(!apply_event(&error, &mut turn, &mut Vec::new()).unwrap());
+        assert!(turn.berry_auth_failed);
     }
 }

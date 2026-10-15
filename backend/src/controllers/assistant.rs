@@ -67,6 +67,12 @@ async fn run(
     events: Vec<Value>,
 ) -> Result<Turn> {
     let turn = api.run_turn(session_id, Value::Array(events)).await?;
+    // Without a working Berry credential the agent can only apologize: ask to reconnect instead.
+    if turn.berry_auth_failed && turn.pending_actions.is_empty() {
+        return Err(Error::BadRequest(
+            "Tu conexión con Berry venció. Volvé a conectarla desde Inicio.".to_string(),
+        ));
+    }
     let ids: Vec<String> = turn.pending_actions.iter().map(|a| a.id.clone()).collect();
     ctx.cache
         .insert_with_expiry(&pending_key(session_id), &ids, Duration::from_secs(86_400))
