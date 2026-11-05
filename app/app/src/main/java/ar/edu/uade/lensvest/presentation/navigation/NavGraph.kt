@@ -42,14 +42,15 @@ import kotlinx.serialization.Serializable
 @Serializable data class ConnectBrokerRoute(val fromOnboarding: Boolean)
 @Serializable object HomeRoute
 @Serializable object StrategiesRoute
-@Serializable object AssistantRoute
+/** [prefill] is sent as the user's first message, e.g. from Lens Mode's "Invertir en KO". */
+@Serializable data class AssistantRoute(val prefill: String? = null)
 @Serializable object ProfileRoute
 @Serializable object LensRoute
 
 private fun MainTab.route(): Any = when (this) {
     MainTab.HOME -> HomeRoute
     MainTab.STRATEGIES -> StrategiesRoute
-    MainTab.ASSISTANT -> AssistantRoute
+    MainTab.ASSISTANT -> AssistantRoute()
     MainTab.PROFILE -> ProfileRoute
 }
 
@@ -147,7 +148,14 @@ fun AppNavigation(
                 composable<ProfileRoute> {
                     ComingSoonScreen("Perfil", "Tu nivel, el modo de la ficha (Simple o Pro) y los brokers conectados van a vivir acá.")
                 }
-                composable<LensRoute> { LensScreen() }
+                composable<LensRoute> {
+                    LensScreen(
+                        onInvest = { brand ->
+                            val prefill = "Quiero invertir en ${brand.company ?: brand.brand} (${brand.ticker}). ¿A cuánto está?"
+                            navController.navigate(AssistantRoute(prefill)) { popUpTo<HomeRoute>() }
+                        },
+                    )
+                }
             }
         }
     }

@@ -9,6 +9,11 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.compose.CameraXViewfinder
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,9 +62,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ar.edu.uade.lensvest.R
 import ar.edu.uade.lensvest.presentation.ui.components.LocalSnackbarHostState
+import ar.edu.uade.lensvest.domain.model.RecognizedBrand
+import ar.edu.uade.lensvest.presentation.ui.components.LetterLogo
+import ar.edu.uade.lensvest.presentation.ui.components.Pill
 import ar.edu.uade.lensvest.presentation.ui.components.PrimaryButton
+import ar.edu.uade.lensvest.presentation.ui.components.SecondaryButton
 import ar.edu.uade.lensvest.presentation.ui.components.rememberComingSoon
 import ar.edu.uade.lensvest.presentation.viewmodel.LensViewModel
+import ar.edu.uade.lensvest.presentation.viewmodel.ScanState
 import ar.edu.uade.lensvest.ui.theme.LensVestColors
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,9 +77,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 private val Glass = Color.White.copy(alpha = 0.14f)
 private val CreamText = LensVestColors.Cream
 
-/** 03 · Lens Mode: live camera with the scan frame and controls on top. */
+/** 03 · Lens Mode: live camera; the capture button asks the AI which brand is in front of it. */
 @Composable
-fun LensScreen(viewModel: LensViewModel = hiltViewModel()) {
+fun LensScreen(
+    onInvest: (RecognizedBrand) -> Unit,
+    viewModel: LensViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -104,21 +117,14 @@ fun LensScreen(viewModel: LensViewModel = hiltViewModel()) {
     }
     LightStatusBarIcons()
 
+    val scan = uiState.scan
     Box(Modifier.fillMaxSize().background(LensVestColors.CameraNight)) {
         uiState.surfaceRequest?.let { CameraXViewfinder(surfaceRequest = it, modifier = Modifier.fillMaxSize()) }
 
         if (!hasPermission) {
             PermissionPrompt(onAllow = allowCamera)
         } else {
-            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                Image(painterResource(R.drawable.lens_scan_frame), null, Modifier.size(200.dp, 262.dp))
-                Spacer(Modifier.height(20.dp))
-                Text(
-                    "Centrá el producto en el recuadro",
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
-                    color = CreamText.copy(alpha = 0.8f),
-                )
-            }
+            ScanFrame(scan, Modifier.align(Alignment.Center))
         }
 
         // Darkens the bottom so the controls stay legible over any scene.
@@ -142,31 +148,144 @@ fun LensScreen(viewModel: LensViewModel = hiltViewModel()) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(painterResource(R.drawable.ic_scan), null, tint = CreamText, modifier = Modifier.size(16.dp))
-                    Text("Apuntá a una marca", style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp), color = CreamText)
+                    Icon(painterResource(if (scan is ScanState.Recognizing) R.drawable.ic_sparkles else R.drawable.ic_scan), null, tint = CreamText, modifier = Modifier.size(16.dp))
+                    Text(scan.tip(), style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp), color = CreamText)
                 }
             }
             GlassButton(R.drawable.ic_info, "Cómo funciona") {
                 scope.launch {
-                    snackbar.showSnackbar("Apuntá a un producto de una marca conocida, como Coca-Cola, Apple, Nike o McDonald's.")
+                    snackbar.showSnackbar("Apuntá a un producto de una marca conocida, como Coca-Cola, Apple, Nike o McDonald's, y tocá el botón.")
                 }
             }
         }
 
-        Row(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 40.dp).width(296.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LabeledGlassButton(R.drawable.ic_clock, "Historial") { comingSoon("Historial de escaneos") }
-            Image(
-                painterResource(R.drawable.lens_capture_button),
-                contentDescription = "Reconocer marca",
-                modifier = Modifier.size(84.dp).alpha(if (hasPermission) 1f else 0.4f).clip(CircleShape)
-                    .clickable(enabled = hasPermission) { comingSoon("Reconocer la marca") },
+        val bottom = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+        when (scan) {
+            is ScanState.Recognized -> BrandResultCard(
+                brand = scan.brand,
+                onInvest = { onInvest(scan.brand) },
+                onScanAgain = viewModel::scanAgain,
+                modifier = bottom.padding(16.dp),
             )
-            LabeledGlassButton(R.drawable.ic_search, "Buscar") { comingSoon("Buscar a mano") }
+            ScanState.NotFound -> MessageCard(
+                title = "No reconocimos una marca",
+                message = "Acercate al logo, mejorá la luz y probá de nuevo.",
+                onRetry = viewModel::scanAgain,
+                modifier = bottom.padding(16.dp),
+            )
+            is ScanState.Failed -> MessageCard(
+                title = "No pudimos analizar la foto",
+                message = scan.message,
+                onRetry = viewModel::scanAgain,
+                modifier = bottom.padding(16.dp),
+            )
+            ScanState.Scanning, ScanState.Recognizing -> Row(
+                bottom.padding(bottom = 40.dp).width(296.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LabeledGlassButton(R.drawable.ic_clock, "Historial") { comingSoon("Historial de escaneos") }
+                val canCapture = hasPermission && scan == ScanState.Scanning
+                Image(
+                    painterResource(R.drawable.lens_capture_button),
+                    contentDescription = "Reconocer marca",
+                    modifier = Modifier.size(84.dp).alpha(if (canCapture) 1f else 0.4f).clip(CircleShape)
+                        .clickable(enabled = canCapture, onClick = viewModel::recognize),
+                )
+                LabeledGlassButton(R.drawable.ic_search, "Buscar") { comingSoon("Buscar a mano") }
+            }
         }
+    }
+}
+
+private fun ScanState.tip() = when (this) {
+    ScanState.Recognizing -> "Reconociendo…"
+    is ScanState.Recognized -> "Encontramos algo"
+    else -> "Apuntá a una marca"
+}
+
+/** The scan frame; it pulses while the photo is being analyzed. */
+@Composable
+private fun ScanFrame(scan: ScanState, modifier: Modifier) {
+    val pulse = rememberInfiniteTransition(label = "scan")
+    val alpha by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "frameAlpha",
+    )
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Image(
+            painterResource(R.drawable.lens_scan_frame),
+            null,
+            Modifier.size(200.dp, 262.dp).alpha(if (scan == ScanState.Recognizing) alpha else 1f),
+        )
+        Spacer(Modifier.height(20.dp))
+        if (scan == ScanState.Scanning || scan == ScanState.Recognizing) {
+            Text(
+                if (scan == ScanState.Recognizing) "Mirando la marca…" else "Centrá el producto en el recuadro",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
+                color = CreamText.copy(alpha = 0.8f),
+            )
+        }
+    }
+}
+
+/** "Marca confirmada": the brand, the listed company behind it, and the way to invest. */
+@Composable
+private fun BrandResultCard(brand: RecognizedBrand, onInvest: () -> Unit, onScanAgain: () -> Unit, modifier: Modifier) {
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(LensVestColors.Paper).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            LetterLogo(brand.brand, LensVestColors.Forest, size = 44.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(brand.brand, style = MaterialTheme.typography.titleLarge, color = LensVestColors.Navy)
+                brand.company?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = LensVestColors.Muted)
+                }
+            }
+            brand.ticker?.let { Pill("$it · CEDEAR", container = LensVestColors.Mint, content = LensVestColors.Forest) }
+        }
+        if (brand.isInvestable) {
+            Text(
+                "${brand.brand} es de ${brand.company ?: "una empresa que cotiza"}. Podés invertir en ${brand.ticker} desde Berry.",
+                style = MaterialTheme.typography.bodySmall,
+                color = LensVestColors.Navy,
+            )
+        } else {
+            Text(
+                "${brand.company ?: "La empresa"} no cotiza en bolsa, así que no se puede invertir en ella.",
+                style = MaterialTheme.typography.bodySmall,
+                color = LensVestColors.Navy,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecondaryButton("Escanear otra", onClick = onScanAgain, compact = true, modifier = Modifier.weight(1f))
+            if (brand.isInvestable) {
+                PrimaryButton(
+                    "Invertir en ${brand.ticker}",
+                    onClick = onInvest,
+                    compact = true,
+                    containerColor = LensVestColors.Forest,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageCard(title: String, message: String, onRetry: () -> Unit, modifier: Modifier) {
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(LensVestColors.Paper).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = LensVestColors.Navy)
+        Text(message, style = MaterialTheme.typography.bodySmall, color = LensVestColors.Muted)
+        Spacer(Modifier.height(4.dp))
+        PrimaryButton("Probar de nuevo", onClick = onRetry, compact = true)
     }
 }
 

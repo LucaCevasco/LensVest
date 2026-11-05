@@ -8,6 +8,8 @@ import ar.edu.uade.lensvest.data.remote.dto.BerryConnectResponse
 import ar.edu.uade.lensvest.data.remote.dto.BerryStatusResponse
 import ar.edu.uade.lensvest.data.remote.dto.LoginRequest
 import ar.edu.uade.lensvest.data.remote.dto.LoginResponse
+import ar.edu.uade.lensvest.data.remote.dto.RecognizeBrandRequest
+import ar.edu.uade.lensvest.data.remote.dto.RecognizedBrandResponse
 import ar.edu.uade.lensvest.data.remote.dto.RegisterRequest
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -35,4 +37,7 @@ interface LensVestApi {
 
     @POST("api/assistant/confirm")
     suspend fun assistantConfirm(@Body body: AssistantConfirmRequest): AssistantTurnResponse
+
+    @POST("api/lens/recognize")
+    suspend fun recognizeBrand(@Body body: RecognizeBrandRequest): RecognizedBrandResponse
 }

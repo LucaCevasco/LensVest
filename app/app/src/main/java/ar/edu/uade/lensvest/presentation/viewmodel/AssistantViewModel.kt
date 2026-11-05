@@ -1,5 +1,6 @@
 package ar.edu.uade.lensvest.presentation.viewmodel
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ar.edu.uade.lensvest.domain.model.AssistantTurn
@@ -23,6 +24,7 @@ class AssistantViewModel @Inject constructor(
     private val sendAssistantMessageUseCase: SendAssistantMessageUseCase,
     private val resolvePendingActionsUseCase: ResolvePendingActionsUseCase,
     getUserNameUseCase: GetUserNameUseCase,
+    private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -32,6 +34,14 @@ class AssistantViewModel @Inject constructor(
         ),
     )
     val uiState = _uiState.asStateFlow()
+
+    init {
+        // A message prepared by another screen (Lens Mode) is sent once, not again on recreation.
+        savedStateHandle.get<String>("prefill")?.takeIf { savedStateHandle.get<Boolean>(PREFILL_SENT) != true }?.let {
+            savedStateHandle[PREFILL_SENT] = true
+            send(it)
+        }
+    }
 
     fun send(text: String) {
         if (text.isBlank() || _uiState.value.isLoading) return
@@ -72,6 +82,8 @@ class AssistantViewModel @Inject constructor(
         }
     }
 }
+
+private const val PREFILL_SENT = "prefill_sent"
 
 private fun greeting(name: String?) =
     "¡Hola${name?.let { " $it" }.orEmpty()}! Contame qué querés hacer, como si le hablaras a un amigo."
