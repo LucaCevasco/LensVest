@@ -1,6 +1,9 @@
 package ar.edu.uade.lensvest.presentation.ui.assistant
 
+import ar.edu.uade.lensvest.domain.model.OrderSide
 import ar.edu.uade.lensvest.domain.model.PendingAction
+import ar.edu.uade.lensvest.domain.model.Strategy
+import ar.edu.uade.lensvest.domain.model.StrategyCondition
 
 /** How an operation the agent prepared reads on the confirmation card. */
 internal data class OperationSummary(
@@ -46,3 +49,23 @@ internal fun PendingAction.summary(): OperationSummary {
         rows = rows,
     )
 }
+
+/** The strategy a `propose_strategy` call describes, to preview it before activating (RF04). */
+internal fun PendingAction.strategyPreview() = Strategy(
+    id = 0,
+    ticker = parameters["ticker"].orEmpty(),
+    name = parameters["name"].orEmpty(),
+    title = parameters["title"].orEmpty(),
+    condition = when (parameters["condition"]) {
+        "price_above" -> StrategyCondition.PRICE_ABOVE
+        "drop_pct" -> StrategyCondition.DROP_PCT
+        "rise_pct" -> StrategyCondition.RISE_PCT
+        else -> StrategyCondition.PRICE_BELOW
+    },
+    threshold = parameters["threshold"]?.toDoubleOrNull() ?: 0.0,
+    referencePriceUsd = parameters["reference_price"]?.toDoubleOrNull() ?: 0.0,
+    side = if (parameters["side"] == "sell") OrderSide.SELL else OrderSide.BUY,
+    amountUsd = parameters["amount_usd"]?.toDoubleOrNull() ?: 0.0,
+    isActive = false,
+    updatedAt = "",
+)

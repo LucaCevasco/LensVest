@@ -29,6 +29,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ar.edu.uade.lensvest.R
 import ar.edu.uade.lensvest.domain.model.InvestorLevel
+import ar.edu.uade.lensvest.presentation.ui.components.IconCircleButton
 import ar.edu.uade.lensvest.presentation.ui.components.OnboardingTopBar
 import ar.edu.uade.lensvest.presentation.ui.components.Pill
 import ar.edu.uade.lensvest.presentation.ui.components.PrimaryButton
@@ -50,20 +51,26 @@ private val options = listOf(
     LevelOption(InvestorLevel.ADVANCED, R.drawable.ic_bar_chart, "Ya invierto", "Quiero datos avanzados: P/E, dividendos, gráficos.", "Vista Pro"),
 )
 
-/** A3 · Tu nivel (paso 2 de 3). */
+/** A3 · Tu nivel (paso 2 de 3), also opened from the profile to change it ([onBack] set). */
 @Composable
 fun LevelScreen(
     onContinue: () -> Unit,
+    onBack: (() -> Unit)? = null,
     viewModel: LevelViewModel = hiltViewModel(),
 ) {
     val selected by viewModel.selected.collectAsStateWithLifecycle()
+    val fromProfile = onBack != null
     ScreenColumn(
         actions = {
-            PrimaryButton("Continuar", onClick = { viewModel.confirm(); onContinue() }, showArrow = true)
+            PrimaryButton(if (fromProfile) "Guardar" else "Continuar", onClick = { viewModel.confirm(); onContinue() }, showArrow = !fromProfile)
         },
     ) {
-        // The account already exists at this point, so there's no going back to the form.
-        OnboardingTopBar(step = 2, total = 3, onBack = null)
+        if (onBack != null) {
+            Row(Modifier.padding(vertical = 8.dp)) { IconCircleButton(R.drawable.ic_arrow_left, "Volver", onBack) }
+        } else {
+            // The account already exists at this point, so there's no going back to the form.
+            OnboardingTopBar(step = 2, total = 3, onBack = null)
+        }
         Spacer(Modifier.height(20.dp))
         Text("¿Cuánto sabés\nde invertir?", style = MaterialTheme.typography.headlineLarge, color = LensVestColors.Navy)
         Spacer(Modifier.height(8.dp))

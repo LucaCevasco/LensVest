@@ -15,8 +15,11 @@ import androidx.camera.lifecycle.awaitInstance
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import ar.edu.uade.lensvest.domain.model.Quote
 import ar.edu.uade.lensvest.domain.model.RecognizedBrand
+import ar.edu.uade.lensvest.domain.usecase.GetQuotesUseCase
 import ar.edu.uade.lensvest.domain.usecase.RecognizeBrandUseCase
+import ar.edu.uade.lensvest.domain.usecase.RecordScanUseCase
 import ar.edu.uade.lensvest.mapper.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -40,6 +43,8 @@ private const val MAX_PHOTO_SIDE = 1024
 @HiltViewModel
 class LensViewModel @Inject constructor(
     private val recognizeBrandUseCase: RecognizeBrandUseCase,
+    private val recordScanUseCase: RecordScanUseCase,
+    private val getQuotesUseCase: GetQuotesUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LensUiState())
@@ -95,6 +100,39 @@ class LensViewModel @Inject constructor(
 
     fun scanAgain() = _uiState.update { it.copy(scan = ScanState.Scanning) }
 
+    /** D1 "Sí, es esa": saves it to the history and shows its price (D2). */
+    fun confirmBrand() {
+        val brand = (_uiState.value.scan as? ScanState.Recognized)?.brand ?: return
+        _uiState.update { it.copy(scan = ScanState.Confirmed(brand)) }
+        viewModelScope.launch {
+            // The history is a convenience: failing to save it shouldn't block the price.
+            val scanId = runCatching { recordScanUseCase(brand).id }.getOrNull()
+            _uiState.update { state -> state.copy(scan = state.confirmedOr(brand) { it.copy(scanId = scanId) }) }
+        }
+        loadQuote(brand)
+    }
+
+    fun retryQuote() {
+        (_uiState.value.scan as? ScanState.Confirmed)?.let { loadQuote(it.brand) }
+    }
+
+    private fun loadQuote(brand: RecognizedBrand) {
+        val ticker = brand.ticker ?: return
+        viewModelScope.launch {
+            _uiState.update { state -> state.copy(scan = state.confirmedOr(brand) { it.copy(quoteError = null) }) }
+            val update: (ScanState.Confirmed) -> ScanState.Confirmed = try {
+                val quote = getQuotesUseCase(listOf(ticker)).firstOrNull()
+                ({ it.copy(quote = quote, quoteError = if (quote == null) "No encontramos el precio de $ticker." else null) })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = e.toUserMessage()
+                ({ it.copy(quoteError = message) })
+            }
+            _uiState.update { state -> state.copy(scan = state.confirmedOr(brand, update)) }
+        }
+    }
+
     private suspend fun takePhoto(): ByteArray = suspendCancellableCoroutine { continuation ->
         imageCapture.takePicture(
             photoExecutor,
@@ -134,10 +172,22 @@ private fun ImageProxy.toUploadJpeg(): ByteArray {
 sealed interface ScanState {
     data object Scanning : ScanState
     data object Recognizing : ScanState
+    /** D1: the AI's guess, waiting for the user to confirm it. */
     data class Recognized(val brand: RecognizedBrand) : ScanState
+    /** D2: confirmed; the price arrives a few seconds later. */
+    data class Confirmed(
+        val brand: RecognizedBrand,
+        val quote: Quote? = null,
+        val quoteError: String? = null,
+        val scanId: Long? = null,
+    ) : ScanState
     data object NotFound : ScanState
     data class Failed(val message: String) : ScanState
 }
+
+/** Applies [change] only if the user is still looking at [brand]'s card. */
+private fun LensUiState.confirmedOr(brand: RecognizedBrand, change: (ScanState.Confirmed) -> ScanState.Confirmed): ScanState =
+    (scan as? ScanState.Confirmed)?.takeIf { it.brand == brand }?.let(change) ?: scan
 
 data class LensUiState(
     val surfaceRequest: SurfaceRequest? = null,

@@ -67,7 +67,12 @@ import ar.edu.uade.lensvest.presentation.ui.components.LetterLogo
 import ar.edu.uade.lensvest.presentation.ui.components.Pill
 import ar.edu.uade.lensvest.presentation.ui.components.PrimaryButton
 import ar.edu.uade.lensvest.presentation.ui.components.SecondaryButton
-import ar.edu.uade.lensvest.presentation.ui.components.rememberComingSoon
+import ar.edu.uade.lensvest.presentation.ui.components.ChangePill
+import ar.edu.uade.lensvest.presentation.ui.components.formatUsd
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import ar.edu.uade.lensvest.presentation.viewmodel.LensViewModel
 import ar.edu.uade.lensvest.presentation.viewmodel.ScanState
 import ar.edu.uade.lensvest.ui.theme.LensVestColors
@@ -77,16 +82,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 private val Glass = Color.White.copy(alpha = 0.14f)
 private val CreamText = LensVestColors.Cream
 
-/** 03 · Lens Mode: live camera; the capture button asks the AI which brand is in front of it. */
+/**
+ * 03 · Lens Mode: live camera; the capture button asks the AI which brand is in
+ * front of it (04), the user confirms it (D1) and sees its price (D2).
+ */
 @Composable
 fun LensScreen(
-    onInvest: (RecognizedBrand) -> Unit,
+    onOpenAsset: (ticker: String, brand: String, scanId: Long?) -> Unit,
+    onOpenHistory: () -> Unit,
+    onSearch: () -> Unit,
     viewModel: LensViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val comingSoon = rememberComingSoon()
     val snackbar = LocalSnackbarHostState.current
     val scope = rememberCoroutineScope()
 
@@ -161,12 +170,32 @@ fun LensScreen(
 
         val bottom = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
         when (scan) {
-            is ScanState.Recognized -> BrandResultCard(
+            is ScanState.Recognized -> ConfirmBrandSheet(
                 brand = scan.brand,
-                onInvest = { onInvest(scan.brand) },
-                onScanAgain = viewModel::scanAgain,
-                modifier = bottom.padding(16.dp),
+                onConfirm = viewModel::confirmBrand,
+                onReject = viewModel::scanAgain,
+                onSearch = onSearch,
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
+            is ScanState.Confirmed -> Column(
+                bottom.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                BrandCard(
+                    scan = scan,
+                    onOpenAsset = { ticker -> onOpenAsset(ticker, scan.brand.brand, scan.scanId) },
+                    onRetryQuote = viewModel::retryQuote,
+                )
+                Row(
+                    Modifier.clip(RoundedCornerShape(999.dp)).clickable(onClick = viewModel::scanAgain).padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(painterResource(R.drawable.ic_scan), null, tint = CreamText, modifier = Modifier.size(16.dp))
+                    Text("Escanear otro producto", style = MaterialTheme.typography.labelMedium.copy(fontSize = 14.sp), color = CreamText)
+                }
+            }
             ScanState.NotFound -> MessageCard(
                 title = "No reconocimos una marca",
                 message = "Acercate al logo, mejorá la luz y probá de nuevo.",
@@ -179,12 +208,24 @@ fun LensScreen(
                 onRetry = viewModel::scanAgain,
                 modifier = bottom.padding(16.dp),
             )
-            ScanState.Scanning, ScanState.Recognizing -> Row(
+            // 04 · Reconociendo
+            ScanState.Recognizing -> Row(
+                bottom.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(LensVestColors.Paper).padding(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(color = LensVestColors.Forest, trackColor = LensVestColors.Mint, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Reconociendo la marca…", style = MaterialTheme.typography.labelLarge, color = LensVestColors.Navy)
+                    Text("Esto tarda unos segundos", style = MaterialTheme.typography.bodySmall, color = LensVestColors.Muted)
+                }
+            }
+            ScanState.Scanning -> Row(
                 bottom.padding(bottom = 40.dp).width(296.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                LabeledGlassButton(R.drawable.ic_clock, "Historial") { comingSoon("Historial de escaneos") }
+                LabeledGlassButton(R.drawable.ic_clock, "Historial", onClick = onOpenHistory)
                 val canCapture = hasPermission && scan == ScanState.Scanning
                 Image(
                     painterResource(R.drawable.lens_capture_button),
@@ -192,15 +233,15 @@ fun LensScreen(
                     modifier = Modifier.size(84.dp).alpha(if (canCapture) 1f else 0.4f).clip(CircleShape)
                         .clickable(enabled = canCapture, onClick = viewModel::recognize),
                 )
-                LabeledGlassButton(R.drawable.ic_search, "Buscar") { comingSoon("Buscar a mano") }
+                LabeledGlassButton(R.drawable.ic_search, "Buscar", onClick = onSearch)
             }
         }
     }
 }
 
 private fun ScanState.tip() = when (this) {
-    ScanState.Recognizing -> "Reconociendo…"
-    is ScanState.Recognized -> "Encontramos algo"
+    ScanState.Recognizing -> "Analizando la imagen"
+    is ScanState.Recognized, is ScanState.Confirmed -> "Encontramos algo"
     else -> "Apuntá a una marca"
 }
 
@@ -231,47 +272,96 @@ private fun ScanFrame(scan: ScanState, modifier: Modifier) {
     }
 }
 
-/** "Marca confirmada": the brand, the listed company behind it, and the way to invest. */
+/** D1 · Confirmar marca: the AI's guess, so a wrong brand never leads to a wrong company. */
 @Composable
-private fun BrandResultCard(brand: RecognizedBrand, onInvest: () -> Unit, onScanAgain: () -> Unit, modifier: Modifier) {
+private fun ConfirmBrandSheet(
+    brand: RecognizedBrand,
+    onConfirm: () -> Unit,
+    onReject: () -> Unit,
+    onSearch: () -> Unit,
+    modifier: Modifier,
+) {
     Column(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(LensVestColors.Paper).padding(18.dp),
+        modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(LensVestColors.Cream)
+            .navigationBarsPadding().padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(36.dp, 4.dp).background(LensVestColors.Line, RoundedCornerShape(2.dp)))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            LetterLogo(brand.brand, LensVestColors.Forest, size = 56.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("¿ES ESTA MARCA?", style = MaterialTheme.typography.labelSmall, color = LensVestColors.Muted)
+                Text("¿Es ${brand.brand}?", style = MaterialTheme.typography.headlineSmall, color = LensVestColors.Navy)
+                brand.company?.let {
+                    Text(
+                        buildAnnotatedString {
+                            append("de ")
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = LensVestColors.Navy)) { append(it) }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LensVestColors.Muted,
+                    )
+                }
+            }
+        }
+        PrimaryButton("Sí, es esa", onClick = onConfirm, containerColor = LensVestColors.Forest, leadingIcon = R.drawable.ic_check)
+        SecondaryButton("No, es otra", onClick = onReject)
+        Text(
+            buildAnnotatedString {
+                append("¿No aparece? ")
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = LensVestColors.Forest)) { append("Buscar a mano") }
+            },
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
+            color = LensVestColors.Muted,
+            modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSearch).padding(6.dp),
+        )
+    }
+}
+
+/** D2 · Marca confirmada: the company behind the brand and its price, over the camera. */
+@Composable
+private fun BrandCard(scan: ScanState.Confirmed, onOpenAsset: (String) -> Unit, onRetryQuote: () -> Unit) {
+    val brand = scan.brand
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(LensVestColors.Paper).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             LetterLogo(brand.brand, LensVestColors.Forest, size = 44.dp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(brand.brand, style = MaterialTheme.typography.titleLarge, color = LensVestColors.Navy)
-                brand.company?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = LensVestColors.Muted)
-                }
+                Text(brand.brand, style = MaterialTheme.typography.labelLarge.copy(fontSize = 17.sp), color = LensVestColors.Navy)
+                brand.company?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LensVestColors.Muted) }
             }
-            brand.ticker?.let { Pill("$it · CEDEAR", container = LensVestColors.Mint, content = LensVestColors.Forest) }
+            brand.ticker?.let { Pill("$it · CEDEAR", container = LensVestColors.Sand, content = LensVestColors.Navy, fontSize = 11) }
         }
-        if (brand.isInvestable) {
-            Text(
-                "${brand.brand} es de ${brand.company ?: "una empresa que cotiza"}. Podés invertir en ${brand.ticker} desde Berry.",
-                style = MaterialTheme.typography.bodySmall,
-                color = LensVestColors.Navy,
-            )
-        } else {
-            Text(
+        val ticker = brand.ticker
+        when {
+            ticker == null -> Text(
                 "${brand.company ?: "La empresa"} no cotiza en bolsa, así que no se puede invertir en ella.",
                 style = MaterialTheme.typography.bodySmall,
                 color = LensVestColors.Navy,
             )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SecondaryButton("Escanear otra", onClick = onScanAgain, compact = true, modifier = Modifier.weight(1f))
-            if (brand.isInvestable) {
-                PrimaryButton(
-                    "Invertir en ${brand.ticker}",
-                    onClick = onInvest,
-                    compact = true,
-                    containerColor = LensVestColors.Forest,
-                    modifier = Modifier.weight(1f),
+            scan.quote != null -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(formatUsd(scan.quote.priceUsd), style = MaterialTheme.typography.headlineMedium, color = LensVestColors.Navy)
+                scan.quote.changePct?.let { ChangePill(it, suffix = " hoy") }
+            }
+            scan.quoteError != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(scan.quoteError, style = MaterialTheme.typography.bodySmall, color = LensVestColors.Terracotta, modifier = Modifier.weight(1f))
+                Text(
+                    "Reintentar",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LensVestColors.Forest,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onRetryQuote).padding(8.dp),
                 )
             }
+            else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(color = LensVestColors.Forest, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                Text("Buscando el precio en Berry…", style = MaterialTheme.typography.bodySmall, color = LensVestColors.Muted)
+            }
+        }
+        if (ticker != null) {
+            PrimaryButton("Ver ficha de la empresa", onClick = { onOpenAsset(ticker) }, showArrow = true, compact = true)
         }
     }
 }

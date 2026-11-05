@@ -7,11 +7,19 @@ import ar.edu.uade.lensvest.data.repository.AssistantRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.AuthRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.BerryRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.LensRepositoryImpl
+import ar.edu.uade.lensvest.data.repository.MarketRepositoryImpl
+import ar.edu.uade.lensvest.data.repository.OrderRepositoryImpl
+import ar.edu.uade.lensvest.data.repository.ScanRepositoryImpl
+import ar.edu.uade.lensvest.data.repository.StrategyRepositoryImpl
 import ar.edu.uade.lensvest.data.repository.ProfileRepositoryImpl
 import ar.edu.uade.lensvest.domain.repository.AssistantRepository
 import ar.edu.uade.lensvest.domain.repository.AuthRepository
 import ar.edu.uade.lensvest.domain.repository.BerryRepository
 import ar.edu.uade.lensvest.domain.repository.LensRepository
+import ar.edu.uade.lensvest.domain.repository.MarketRepository
+import ar.edu.uade.lensvest.domain.repository.OrderRepository
+import ar.edu.uade.lensvest.domain.repository.ScanRepository
+import ar.edu.uade.lensvest.domain.repository.StrategyRepository
 import ar.edu.uade.lensvest.domain.repository.ProfileRepository
 import dagger.Module
 import dagger.Provides
@@ -79,4 +87,20 @@ object AppModule {
     @Provides
     @Singleton
     fun provideLensRepository(impl: LensRepositoryImpl): LensRepository = impl
+
+    @Provides
+    @Singleton
+    fun provideMarketRepository(impl: MarketRepositoryImpl): MarketRepository = impl
+
+    @Provides
+    @Singleton
+    fun provideOrderRepository(impl: OrderRepositoryImpl): OrderRepository = impl
+
+    @Provides
+    @Singleton
+    fun provideStrategyRepository(impl: StrategyRepositoryImpl): StrategyRepository = impl
+
+    @Provides
+    @Singleton
+    fun provideScanRepository(impl: ScanRepositoryImpl): ScanRepository = impl
 }

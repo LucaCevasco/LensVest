@@ -60,6 +60,9 @@ import ar.edu.uade.lensvest.R
 import ar.edu.uade.lensvest.domain.model.ChatMessage
 import ar.edu.uade.lensvest.domain.model.ChatRole
 import ar.edu.uade.lensvest.domain.model.PendingAction
+import ar.edu.uade.lensvest.domain.model.isStrategyProposal
+import ar.edu.uade.lensvest.presentation.ui.strategies.actionText
+import ar.edu.uade.lensvest.presentation.ui.strategies.conditionText
 import ar.edu.uade.lensvest.presentation.ui.components.LetterLogo
 import ar.edu.uade.lensvest.presentation.ui.components.Pill
 import ar.edu.uade.lensvest.presentation.ui.components.PrimaryButton
@@ -69,7 +72,7 @@ import ar.edu.uade.lensvest.presentation.viewmodel.AssistantViewModel
 import ar.edu.uade.lensvest.ui.theme.LensVestColors
 import ar.edu.uade.lensvest.ui.theme.LensVestTheme
 
-private val suggestions = listOf("¿Cómo voy este mes?", "Comprá $5.000 de KO")
+private val suggestions = listOf("¿Cómo voy este mes?", "Comprá US$ 5 de KO", "Si NVDA baja 10 %, comprá US$ 100")
 
 /** E1/E2 · Asistente: chat over the user's Berry account, with operations to confirm. */
 @Composable
@@ -139,7 +142,11 @@ private fun AssistantContent(
         ) {
             items(uiState.messages) { ChatBubble(it) }
             items(uiState.pendingActions) { action ->
-                OperationCard(action, enabled = !uiState.isLoading, onConfirm = onConfirm, onEdit = onEdit)
+                if (action.isStrategyProposal) {
+                    StrategyCard(action, enabled = !uiState.isLoading, onCreate = onConfirm, onEdit = onEdit)
+                } else {
+                    OperationCard(action, enabled = !uiState.isLoading, onConfirm = onConfirm, onEdit = onEdit)
+                }
             }
         }
         if (uiState.isLoading) {
@@ -242,6 +249,36 @@ private fun OperationCard(action: PendingAction, enabled: Boolean, onConfirm: ()
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             SecondaryButton("Editar", onClick = onEdit, enabled = enabled, compact = true, modifier = Modifier.weight(1f))
             PrimaryButton("Confirmar", onClick = onConfirm, enabled = enabled, compact = true, containerColor = LensVestColors.Forest, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+/** E1 "Estrategia detectada": the condition and the action, shown before it's activated (RF04). */
+@Composable
+private fun StrategyCard(action: PendingAction, enabled: Boolean, onCreate: () -> Unit, onEdit: () -> Unit) {
+    val strategy = action.strategyPreview()
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(LensVestColors.Paper).border(2.dp, LensVestColors.Forest, shape).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        Pill("ESTRATEGIA DETECTADA", container = LensVestColors.Mint, content = LensVestColors.Forest, fontSize = 10)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            LetterLogo(strategy.name.ifEmpty { strategy.ticker }, LensVestColors.Terracotta, size = 36.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(strategy.title, style = MaterialTheme.typography.labelLarge.copy(fontSize = 15.sp), color = LensVestColors.Navy)
+                Text("${strategy.ticker} · CEDEAR vía Berry", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = LensVestColors.Muted)
+            }
+        }
+        listOf("Si" to strategy.conditionText().removePrefix("Si "), "Entonces" to strategy.actionText()).forEach { (label, value) ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(label, style = MaterialTheme.typography.bodySmall, color = LensVestColors.Muted)
+                Text(value, style = MaterialTheme.typography.labelMedium, color = LensVestColors.Navy)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecondaryButton("Editar", onClick = onEdit, enabled = enabled, compact = true, modifier = Modifier.weight(1f))
+            PrimaryButton("Crear estrategia", onClick = onCreate, enabled = enabled, compact = true, containerColor = LensVestColors.Forest, modifier = Modifier.weight(1f))
         }
     }
 }

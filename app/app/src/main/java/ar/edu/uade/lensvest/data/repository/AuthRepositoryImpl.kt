@@ -19,4 +19,6 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun register(name: String, email: String, password: String) =
         api.register(RegisterRequest(email, password, name))
+
+    override fun logout() = session.clear()
 }

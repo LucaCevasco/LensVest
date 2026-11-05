@@ -24,7 +24,15 @@ import ar.edu.uade.lensvest.presentation.ui.auth.LoginScreen
 import ar.edu.uade.lensvest.presentation.ui.auth.RegisterScreen
 import ar.edu.uade.lensvest.presentation.ui.broker.BerryCallback
 import ar.edu.uade.lensvest.presentation.ui.broker.ConnectBrokerScreen
-import ar.edu.uade.lensvest.presentation.ui.common.ComingSoonScreen
+import ar.edu.uade.lensvest.domain.model.OrderSide
+import ar.edu.uade.lensvest.presentation.ui.asset.AssetScreen
+import ar.edu.uade.lensvest.presentation.ui.history.HistoryScreen
+import ar.edu.uade.lensvest.presentation.ui.history.SearchScreen
+import ar.edu.uade.lensvest.presentation.ui.order.AmountScreen
+import ar.edu.uade.lensvest.presentation.ui.order.ReviewScreen
+import ar.edu.uade.lensvest.presentation.ui.order.SuccessScreen
+import ar.edu.uade.lensvest.presentation.ui.profile.ProfileScreen
+import ar.edu.uade.lensvest.presentation.ui.strategies.StrategiesScreen
 import ar.edu.uade.lensvest.presentation.ui.components.LensVestBottomBar
 import ar.edu.uade.lensvest.presentation.ui.components.LocalSnackbarHostState
 import ar.edu.uade.lensvest.presentation.ui.components.MainTab
@@ -45,7 +53,18 @@ import kotlinx.serialization.Serializable
 /** [prefill] is sent as the user's first message, e.g. from Lens Mode's "Invertir en KO". */
 @Serializable data class AssistantRoute(val prefill: String? = null)
 @Serializable object ProfileRoute
+@Serializable object ProfileLevelRoute
 @Serializable object LensRoute
+@Serializable object HistoryRoute
+@Serializable object SearchRoute
+/** [brand] and [scanId] are set when the sheet opens from a scan, e.g. "Sprite" for KO. */
+@Serializable data class AssetRoute(val ticker: String, val brand: String? = null, val scanId: Long = 0, val favorite: Boolean = false)
+// Amounts travel as strings: they're money, and the route only carries them to the next screen.
+@Serializable data class AmountRoute(val ticker: String, val name: String, val side: String, val priceUsd: String, val availableUsd: String? = null)
+@Serializable data class ReviewRoute(val ticker: String, val name: String, val side: String, val amount: String, val amountUnit: String, val priceUsd: String?)
+@Serializable data class SuccessRoute(val name: String, val ticker: String, val side: String, val amount: String, val orderId: String?)
+
+private fun OrderSide.wire() = if (this == OrderSide.SELL) "sell" else "buy"
 
 private fun MainTab.route(): Any = when (this) {
     MainTab.HOME -> HomeRoute
@@ -124,6 +143,9 @@ fun AppNavigation(
                 composable<LevelRoute> {
                     LevelScreen(onContinue = { navController.navigate(ConnectBrokerRoute(fromOnboarding = true)) })
                 }
+                composable<ProfileLevelRoute> {
+                    LevelScreen(onContinue = navController::popBackStack, onBack = navController::popBackStack)
+                }
                 composable<ConnectBrokerRoute> { entry ->
                     val fromOnboarding = entry.toRoute<ConnectBrokerRoute>().fromOnboarding
                     ConnectBrokerScreen(
@@ -139,21 +161,101 @@ fun AppNavigation(
                         onOpenLens = { navController.navigate(LensRoute) },
                         onOpenAssistant = { navController.openTab(MainTab.ASSISTANT) },
                         onConnectBroker = { navController.navigate(ConnectBrokerRoute(fromOnboarding = false)) },
+                        onOpenStrategies = { navController.openTab(MainTab.STRATEGIES) },
+                        onOpenAsset = { navController.navigate(AssetRoute(it)) },
                     )
                 }
                 composable<StrategiesRoute> {
-                    ComingSoonScreen("Estrategias", "Acá vas a ver y pausar las reglas que armes con el asistente, como \"si KO baja 10 %, comprá USD 50\".")
+                    StrategiesScreen(onCreate = { navController.openTab(MainTab.ASSISTANT) })
                 }
                 composable<AssistantRoute> { AssistantScreen() }
                 composable<ProfileRoute> {
-                    ComingSoonScreen("Perfil", "Tu nivel, el modo de la ficha (Simple o Pro) y los brokers conectados van a vivir acá.")
+                    ProfileScreen(
+                        onChangeLevel = { navController.navigate(ProfileLevelRoute) },
+                        onManageBroker = { navController.navigate(ConnectBrokerRoute(fromOnboarding = false)) },
+                        onLoggedOut = { navController.navigate(WelcomeRoute) { popUpTo(0) { inclusive = true } } },
+                    )
                 }
                 composable<LensRoute> {
                     LensScreen(
-                        onInvest = { brand ->
-                            val prefill = "Quiero invertir en ${brand.company ?: brand.brand} (${brand.ticker}). ¿A cuánto está?"
-                            navController.navigate(AssistantRoute(prefill)) { popUpTo<HomeRoute>() }
+                        onOpenAsset = { ticker, brand, scanId -> navController.navigate(AssetRoute(ticker, brand, scanId ?: 0)) },
+                        onOpenHistory = { navController.navigate(HistoryRoute) },
+                        onSearch = { navController.navigate(SearchRoute) },
+                    )
+                }
+                composable<HistoryRoute> {
+                    HistoryScreen(
+                        onBack = navController::popBackStack,
+                        onOpenScan = { scan ->
+                            scan.ticker?.let { navController.navigate(AssetRoute(it, scan.brand, scan.id, scan.favorite)) }
                         },
+                        onSearch = { navController.navigate(SearchRoute) },
+                        onScan = { navController.navigate(LensRoute) { popUpTo<LensRoute> { inclusive = true } } },
+                    )
+                }
+                composable<SearchRoute> {
+                    SearchScreen(
+                        onBack = navController::popBackStack,
+                        onOpenAsset = { navController.navigate(AssetRoute(it.ticker)) },
+                    )
+                }
+                composable<AssetRoute> {
+                    AssetScreen(
+                        onBack = navController::popBackStack,
+                        onTrade = { trade ->
+                            navController.navigate(
+                                AmountRoute(
+                                    ticker = trade.ticker,
+                                    name = trade.name,
+                                    side = trade.side.wire(),
+                                    priceUsd = trade.priceUsd.toString(),
+                                    availableUsd = trade.availableUsd?.toString(),
+                                ),
+                            )
+                        },
+                    )
+                }
+                composable<AmountRoute> { entry ->
+                    val route = entry.toRoute<AmountRoute>()
+                    AmountScreen(
+                        onBack = navController::popBackStack,
+                        onClose = navController::popBackStack,
+                        onPrepared = { order ->
+                            navController.navigate(
+                                ReviewRoute(
+                                    ticker = order.ticker,
+                                    name = route.name,
+                                    side = order.side.wire(),
+                                    amount = order.amount.toString(),
+                                    amountUnit = order.amountUnit,
+                                    priceUsd = route.priceUsd,
+                                ),
+                            )
+                        },
+                    )
+                }
+                composable<ReviewRoute> { entry ->
+                    val route = entry.toRoute<ReviewRoute>()
+                    ReviewScreen(
+                        onBack = navController::popBackStack,
+                        onExecuted = { result ->
+                            navController.navigate(SuccessRoute(route.name, route.ticker, route.side, route.amount, result.orderId)) {
+                                // Back from the success screen returns to the sheet, not to a sent order.
+                                popUpTo<AmountRoute> { inclusive = true }
+                            }
+                        },
+                    )
+                }
+                composable<SuccessRoute> { entry ->
+                    val route = entry.toRoute<SuccessRoute>()
+                    SuccessScreen(
+                        name = route.name,
+                        ticker = route.ticker,
+                        isSell = route.side == "sell",
+                        amountUsd = route.amount.toDoubleOrNull() ?: 0.0,
+                        orderId = route.orderId,
+                        onScanAnother = { navController.navigate(LensRoute) { popUpTo<HomeRoute>() } },
+                        onSeeInvestments = { navController.navigate(HomeRoute) { popUpTo<HomeRoute> { inclusive = true } } },
                     )
                 }
             }

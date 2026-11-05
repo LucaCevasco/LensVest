@@ -33,7 +33,7 @@ private val CompactShape = RoundedCornerShape(16.dp)
 private fun buttonText(compact: Boolean) =
     MaterialTheme.typography.labelLarge.let { if (compact) it.copy(fontSize = 15.sp) else it }
 
-/** Filled navy call to action (56dp), optionally with a trailing arrow. */
+/** Filled navy call to action (56dp), optionally with a leading icon or a trailing arrow. */
 @Composable
 fun PrimaryButton(
     text: String,
@@ -42,6 +42,7 @@ fun PrimaryButton(
     enabled: Boolean = true,
     loading: Boolean = false,
     showArrow: Boolean = false,
+    leadingIcon: Int? = null,
     containerColor: Color = LensVestColors.Navy,
     compact: Boolean = false,
 ) {
@@ -61,6 +62,7 @@ fun PrimaryButton(
             CircularProgressIndicator(color = LensVestColors.Cream, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                leadingIcon?.let { Icon(painterResource(it), null, Modifier.size(20.dp)) }
                 Text(text, style = buttonText(compact))
                 if (showArrow) Icon(painterResource(R.drawable.ic_arrow_right), null, Modifier.size(20.dp))
             }
