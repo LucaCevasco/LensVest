@@ -208,6 +208,23 @@ impl Model {
         })
     }
 
+    /// Drops the user's assistant session, e.g. once it reached its spend cap;
+    /// the next message starts a new one.
+    ///
+    /// # Errors
+    /// When the database fails.
+    pub async fn forget_session(db: &DatabaseConnection, session_id: &str) -> Result<()> {
+        Entity::update_many()
+            .col_expr(
+                berry_connections::Column::SessionId,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .filter(berry_connections::Column::SessionId.eq(session_id))
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
     /// The user's assistant session, created on first use or after it ended.
     ///
     /// # Errors
@@ -218,7 +235,13 @@ impl Model {
                 return Ok(session_id.clone());
             }
         }
-        let session_id = api.create_session(&self.vault_id).await?;
+        let session_id = api
+            .create_session(
+                &api.settings.agent_id,
+                &self.vault_id,
+                api.settings.session_budget_cents,
+            )
+            .await?;
         let mut conn = self.into_active_model();
         conn.session_id = Set(Some(session_id.clone()));
         conn.update(db).await?;

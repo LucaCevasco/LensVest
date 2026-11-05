@@ -13,6 +13,12 @@ const BETA: &str = "managed-agents-2026-04-01";
 /// Upper bound for one assistant turn, so an app request can't hang forever.
 const TURN_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// What the user sees when Berry rejects their credential (expired or revoked).
+pub const BERRY_RECONNECT: &str = "Tu conexión con Berry venció. Volvé a conectarla desde Inicio.";
+
+/// The session hit its spend cap (`session_budget_cents`); no event can resume it.
+pub const BUDGET_REACHED: &str = "se alcanzó el límite de gasto de esta conversación";
+
 /// `settings.anthropic` from `config/<env>.yaml`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AnthropicSettings {
@@ -24,10 +30,14 @@ pub struct AnthropicSettings {
     pub environment_id: String,
     /// Hard spend cap for each session, in USD cents.
     pub session_budget_cents: u32,
+    /// Agent that fetches the data the app's screens show (see `data::berry_data`).
+    #[serde(default)]
+    pub data_agent_id: String,
 }
 
-/// A tool call the agent is waiting on the user to approve (e.g. `place_order`).
-#[derive(Debug, Clone, Serialize, PartialEq)]
+/// A tool call the session is waiting on: a Berry tool the user has to
+/// approve (e.g. `place_order`) or one of our custom tools (e.g. `propose_strategy`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PendingAction {
     /// Session event id (`sevt_...`) to answer with `user.tool_confirmation`.
     pub id: String,
@@ -35,16 +45,27 @@ pub struct PendingAction {
     pub input: Value,
 }
 
+/// What a Berry tool returned during the turn.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ToolResult {
+    pub tool_use_id: String,
+    pub is_error: bool,
+    pub text: String,
+}
+
 /// What the agent produced until it stopped and needs the user again.
 #[derive(Debug, Default, Serialize, PartialEq)]
 pub struct Turn {
     pub reply: String,
     pub pending_actions: Vec<PendingAction>,
+    #[serde(skip)]
+    pub tool_results: Vec<ToolResult>,
     /// Berry rejected the user's credential during the turn (expired or revoked).
     #[serde(skip)]
     pub berry_auth_failed: bool,
 }
 
+#[derive(Clone)]
 pub struct ManagedAgents {
     http: reqwest::Client,
     pub settings: AnthropicSettings,
@@ -112,22 +133,28 @@ impl ManagedAgents {
             .ok_or_else(|| Error::string(&format!("anthropic response without id: {value}")))
     }
 
-    /// Creates a session for one user: their vault is the only Berry credential it can use.
+    /// Creates a session of `agent_id` for one user: their vault is the only
+    /// Berry credential it can use.
     ///
     /// # Errors
     /// When the API rejects the request.
-    pub async fn create_session(&self, vault_id: &str) -> Result<String> {
+    pub async fn create_session(
+        &self,
+        agent_id: &str,
+        vault_id: &str,
+        budget_cents: u32,
+    ) -> Result<String> {
         let session = self
             .post(
                 "/sessions",
                 &json!({
-                    "agent": self.settings.agent_id,
+                    "agent": agent_id,
                     "environment_id": self.settings.environment_id,
                     "vault_ids": [vault_id],
                     "budget": {
                         "type": "limit",
                         "max_list_cost": {
-                            "amount": self.settings.session_budget_cents.to_string(),
+                            "amount": budget_cents.to_string(),
                             "currency": "USD"
                         }
                     }
@@ -150,6 +177,13 @@ impl ManagedAgents {
             )
             .await?;
         Ok(result["status"] == "valid")
+    }
+
+    /// # Errors
+    /// When the API rejects the request or is unreachable.
+    pub async fn delete_session(&self, session_id: &str) -> Result<()> {
+        Self::send(self.request(Method::DELETE, &format!("/sessions/{session_id}"))).await?;
+        Ok(())
     }
 
     /// Whether a session can still take events.
@@ -236,6 +270,29 @@ fn apply_event(event: &Value, turn: &mut Turn, asks: &mut Vec<PendingAction>) ->
                 turn.reply.push_str(&text.join(""));
             }
         }
+        "agent.custom_tool_use" => {
+            asks.push(PendingAction {
+                id: event["id"].as_str().unwrap_or_default().to_string(),
+                tool: event["name"].as_str().unwrap_or_default().to_string(),
+                input: event["input"].clone(),
+            });
+        }
+        "agent.mcp_tool_result" => {
+            let text = event["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|block| block["text"].as_str())
+                .collect::<String>();
+            turn.tool_results.push(ToolResult {
+                tool_use_id: event["mcp_tool_use_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                is_error: event["is_error"].as_bool().unwrap_or(false),
+                text,
+            });
+        }
         "agent.mcp_tool_use" | "agent.tool_use" if event["evaluated_permission"] == "ask" => {
             asks.push(PendingAction {
                 id: event["id"].as_str().unwrap_or_default().to_string(),
@@ -274,11 +331,7 @@ fn apply_event(event: &Value, turn: &mut Turn, asks: &mut Vec<PendingAction>) ->
                         matching
                     };
                 }
-                "budget_reached" => {
-                    return Err(Error::string(
-                        "se alcanzó el límite de gasto de esta conversación",
-                    ))
-                }
+                "budget_reached" => return Err(Error::string(BUDGET_REACHED)),
                 "retries_exhausted" => {
                     return Err(Error::string("el asistente no pudo completar la respuesta"))
                 }

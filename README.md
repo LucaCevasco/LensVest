@@ -20,11 +20,23 @@ cargo test
 - Cada usuario tiene **su propio vault** con la credencial OAuth de Berry; el backend no guarda tokens de Berry
   y Anthropic los renueva. Cada sesión del agente usa solo el vault de su usuario.
 - `place_order` y `cancel_order` requieren confirmación (`always_ask`): la app muestra la orden y el usuario
-  confirma o rechaza. Cada sesión tiene un tope de gasto (`session_budget_cents`).
+  confirma o rechaza. Cada sesión tiene un tope de gasto (`session_budget_cents`). Las compras desde la ficha
+  usan el mismo camino: un mensaje armado ("Comprá USD 5 de KO…") y la confirmación en la pantalla de revisión.
+  La app muestra la orden como hecha solo con la respuesta de Berry (`executed` en `/confirm`).
+- Estrategias: el agente llama a la tool propia `propose_strategy`; al confirmar, el backend la guarda.
+  La ejecución automática de estrategias todavía no existe.
+- **Agente de datos** (`data_agent_id`, Sonnet, solo lectura): arma los datos de las pantallas (portfolio, ficha,
+  precios, búsqueda) respondiendo con tools `show_*`. Cada consulta es una sesión descartable con el vault del
+  usuario; el resultado se cachea 2 minutos. Tarda ~5–15 s.
+- Las sesiones quedan fijadas a la versión del agente con la que se crearon: `ai_setup` descarta las sesiones
+  de chat existentes para que usen la versión nueva.
 
 Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, y con `Authorization: Bearer <jwt>`:
-`POST /api/berry/connect`, `POST /api/berry/callback`, `GET /api/berry/status`,
-`POST /api/assistant/messages` (`{text}`), `POST /api/assistant/confirm` (`{approve}`).
+`GET /api/auth/current`, `POST /api/berry/connect`, `POST /api/berry/callback`, `GET /api/berry/status`,
+`POST /api/assistant/messages` (`{text}`), `POST /api/assistant/confirm` (`{approve}`),
+`POST /api/lens/recognize`, `GET /api/portfolio`, `GET /api/assets/{ticker}`, `GET /api/quotes?tickers=KO,PG`,
+`GET /api/search?q=`, `GET /api/strategies`, `PATCH /api/strategies/{id}` (`{status}`), `DELETE /api/strategies/{id}`,
+`GET|POST /api/scans`, `POST /api/scans/{id}/favorite`.
 
 ## App (`app/`) — Kotlin + Jetpack Compose (MVVM / Clean Architecture, Hilt)
 
@@ -42,7 +54,8 @@ ar.edu.uade.lensvest/
 - Diseño: Figma "InvestLens — Diseño App" (copia `rVM36fl0jcbqQSXpO6jFIx`). Tokens en `ui/theme`
   (crema `#F5EFE3`, azul marino `#14213D`, verde bosque `#2D5A3D`); tipografías Fraunces y DM Sans
   (variables, en `res/font/`, licencia OFL en `app/fonts-licenses/`). Íconos del diseño como vectores en `res/drawable/`.
-- Lens Mode usa la cámara real (CameraX); pide el permiso `CAMERA` al abrirse.
+- Lens Mode usa la cámara real (CameraX); pide el permiso `CAMERA` al abrirse. Para probar con la cámara de la
+  Mac: `emulator -avd Medium_Phone -camera-back webcam1`.
 - El build debug apunta a `http://10.0.2.2:5150/` (`BuildConfig.BASE_URL`).
 - **Android 17 (API 37)**: `10.0.2.2` cuenta como red local. El build debug pide el permiso
   "dispositivos cercanos" (`ACCESS_LOCAL_NETWORK`) al abrir la app: aceptarlo, si no, no llega al backend.

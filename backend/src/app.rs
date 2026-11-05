@@ -16,7 +16,7 @@ use std::path::Path;
 #[allow(unused_imports)]
 use crate::{
     controllers,
-    models::_entities::{berry_connections, users},
+    models::_entities::{berry_connections, scans, strategies, users},
     tasks,
     workers::downloader::DownloadWorker,
 };
@@ -52,6 +52,9 @@ impl Hooks for App {
 
     fn routes(_ctx: &AppContext) -> AppRoutes {
         AppRoutes::with_default_routes() // controller routes below
+            .add_route(controllers::strategies::routes())
+            .add_route(controllers::scans::routes())
+            .add_route(controllers::market::routes())
             .add_route(controllers::lens::routes())
             .add_route(controllers::assistant::routes())
             .add_route(controllers::auth::routes())
@@ -70,6 +73,8 @@ impl Hooks for App {
         tasks.register(tasks::user_delete::UserDelete);
     }
     async fn truncate(ctx: &AppContext) -> Result<()> {
+        truncate_table(&ctx.db, strategies::Entity).await?;
+        truncate_table(&ctx.db, scans::Entity).await?;
         truncate_table(&ctx.db, berry_connections::Entity).await?;
         truncate_table(&ctx.db, users::Entity).await?;
         Ok(())

@@ -35,3 +35,38 @@ async fn can_query_berry_connections() {
         .await
         .expect("`berry_connections` should be queryable — entity and migration must agree");
 }
+
+/// A session that hit its spend cap is forgotten, so the user's next message starts a new one.
+#[tokio::test]
+#[serial]
+async fn forget_session_clears_only_that_session() {
+    use backend::models::{berry_connections::Model, users};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+
+    let boot = boot_test::<App>().await.unwrap();
+    let db = &boot.app_context.db;
+    let user = users::Model::create_with_password(
+        db,
+        &users::RegisterParams { email: "cap@lensvest.dev".into(), password: "12341234".into(), name: "Cap".into() },
+    )
+    .await
+    .unwrap();
+    let conn = berry_connections::ActiveModel {
+        user_id: Set(user.id),
+        vault_id: Set("vlt_1".into()),
+        credential_id: Set("vcrd_1".into()),
+        session_id: Set(Some("sesn_capped".into())),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+
+    Model::forget_session(db, "sesn_other").await.unwrap();
+    let kept = berry_connections::Entity::find_by_id(conn.id).one(db).await.unwrap().unwrap();
+    assert_eq!(kept.session_id.as_deref(), Some("sesn_capped"));
+
+    Model::forget_session(db, "sesn_capped").await.unwrap();
+    let cleared = berry_connections::Entity::find_by_id(conn.id).one(db).await.unwrap().unwrap();
+    assert_eq!(cleared.session_id, None);
+}

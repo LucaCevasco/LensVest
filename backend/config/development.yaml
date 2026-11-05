@@ -128,5 +128,6 @@ settings:
     # Filled in after running `cargo loco task ai_setup` once.
     agent_id: agent_01U87eNCEEDFEaRxkeievr8o
     environment_id: env_01Nepp8u1y7YtXkn8EET22FL
+    data_agent_id: agent_01TJ1Ezjpk8DWrqfoCELXskd
     # Hard spend cap per assistant session, in USD cents.
     session_budget_cents: 200
