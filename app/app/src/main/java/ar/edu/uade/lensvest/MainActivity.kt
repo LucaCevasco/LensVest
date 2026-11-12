@@ -12,14 +12,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ar.edu.uade.lensvest.domain.usecase.ObserveSessionUseCase
 import ar.edu.uade.lensvest.presentation.navigation.AppNavigation
 import ar.edu.uade.lensvest.presentation.ui.broker.BerryCallback
 import ar.edu.uade.lensvest.ui.theme.LensVestTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject lateinit var observeSession: ObserveSessionUseCase
+
     /** Latest Berry OAuth redirect, until the Home screen consumes it. */
     private val berryCallback = MutableStateFlow<BerryCallback?>(null)
 
@@ -35,7 +39,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             LensVestTheme {
                 val callback by berryCallback.collectAsStateWithLifecycle()
+                val signedIn by observeSession().collectAsStateWithLifecycle(initialValue = observeSession.isSignedIn())
                 AppNavigation(
+                    signedIn = signedIn,
                     berryCallback = callback,
                     onBerryCallbackHandled = { berryCallback.value = null },
                 )

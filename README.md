@@ -56,6 +56,10 @@ ar.edu.uade.lensvest/
   (variables, en `res/font/`, licencia OFL en `app/fonts-licenses/`). Íconos del diseño como vectores en `res/drawable/`.
 - Lens Mode usa la cámara real (CameraX); pide el permiso `CAMERA` al abrirse. Para probar con la cámara de la
   Mac: `emulator -avd Medium_Phone -camera-back webcam1`.
+- Sesión (RNF02): el JWT y el nombre se guardan cifrados con AES-GCM y una key del Android Keystore
+  (`data/local/KeystoreCipher`), así que la sesión sobrevive a cerrar la app. Si el backend responde 401
+  (el JWT vence a los 7 días) o el usuario cierra sesión, se borra y la app vuelve a Bienvenida.
+  `allowBackup="false"`. Las preferencias de vista (nivel, Simple/Pro) van en prefs comunes: no son secretas.
 - El build debug apunta a `http://10.0.2.2:5150/` (`BuildConfig.BASE_URL`).
 - **Android 17 (API 37)**: `10.0.2.2` cuenta como red local. El build debug pide el permiso
   "dispositivos cercanos" (`ACCESS_LOCAL_NETWORK`) al abrir la app: aceptarlo, si no, no llega al backend.

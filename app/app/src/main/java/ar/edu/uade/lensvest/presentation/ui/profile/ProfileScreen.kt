@@ -61,7 +61,6 @@ fun InvestorLevel.label() = when (this) {
 fun ProfileScreen(
     onChangeLevel: () -> Unit,
     onManageBroker: () -> Unit,
-    onLoggedOut: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -74,10 +73,8 @@ fun ProfileScreen(
         onChangeLevel = onChangeLevel,
         onManageBroker = onManageBroker,
         onComingSoon = comingSoon,
-        onLogout = {
-            viewModel.logout()
-            onLoggedOut()
-        },
+        // Navigation reacts to the session ending and returns to Welcome.
+        onLogout = viewModel::logout,
     )
 }
 

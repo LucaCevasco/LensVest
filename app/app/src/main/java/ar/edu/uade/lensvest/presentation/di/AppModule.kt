@@ -52,7 +52,10 @@ object AppModule {
                 } else {
                     chain.request().newBuilder().header("Authorization", "Bearer $token").build()
                 }
-                chain.proceed(request)
+                val response = chain.proceed(request)
+                // The JWT expired (7 days) or was revoked: sign out, and the app goes back to Welcome.
+                if (response.code == 401 && token != null && session.token.value == token) session.clear()
+                response
             }
             .build()
 

@@ -8,6 +8,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -91,6 +92,7 @@ private fun NavHostController.enterApp() = navigate(HomeRoute) {
 
 @Composable
 fun AppNavigation(
+    signedIn: Boolean,
     berryCallback: BerryCallback?,
     onBerryCallbackHandled: () -> Unit,
 ) {
@@ -98,6 +100,15 @@ fun AppNavigation(
     val snackbarHostState = remember { SnackbarHostState() }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = backStackEntry?.destination.currentTab()
+    // A saved session opens straight into the app (RNF02); decided once, at launch.
+    val startDestination: Any = remember { if (signedIn) HomeRoute else WelcomeRoute }
+    // Logout or an expired session: back to Welcome, with nothing to go back to.
+    LaunchedEffect(signedIn) {
+        val inOnboarding = backStackEntry?.destination?.let { d ->
+            listOf(WelcomeRoute::class, LoginRoute::class, RegisterRoute::class).any { d.hasRoute(it) }
+        } ?: true
+        if (!signedIn && !inOnboarding) navController.navigate(WelcomeRoute) { popUpTo(0) { inclusive = true } }
+    }
 
     CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
         Scaffold(
@@ -117,7 +128,7 @@ fun AppNavigation(
         ) { padding ->
             NavHost(
                 navController = navController,
-                startDestination = WelcomeRoute,
+                startDestination = startDestination,
                 modifier = Modifier.padding(padding),
             ) {
                 composable<WelcomeRoute> {
@@ -173,7 +184,6 @@ fun AppNavigation(
                     ProfileScreen(
                         onChangeLevel = { navController.navigate(ProfileLevelRoute) },
                         onManageBroker = { navController.navigate(ConnectBrokerRoute(fromOnboarding = false)) },
-                        onLoggedOut = { navController.navigate(WelcomeRoute) { popUpTo(0) { inclusive = true } } },
                     )
                 }
                 composable<LensRoute> {
